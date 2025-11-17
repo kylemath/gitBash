@@ -1,0 +1,11 @@
+{
+  "id": "gitBash",
+  "title": "GitBash",
+  "oneLiner": "terminal command gir to init or edit a repo and make catelogue for webpagee'",
+  "demoUrl": "https://github.com/kylemath/gitBash",
+  "screenshot": "https://raw.githubusercontent.com/kylemath/gitBash/main/screenshot.png",
+  "kind": "project",
+  "categories": ["terminal", "github", "productive"],
+  "tags": ["terminal", "github", "productive"],
+  "status": "published"
+}

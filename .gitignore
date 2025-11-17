@@ -1,0 +1,33 @@
+# Logs directory - may contain sensitive project information
+logs/
+*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backup files
+*.bak
+*~
+
+# Environment files (if any API keys are stored)
+.env
+.env.local
+.env.*.local
+
+# Test directories
+test/
+tests/
+
