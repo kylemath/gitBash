@@ -377,7 +377,8 @@ Source materials:
 {context}
 
 Respond with strictly valid JSON only (no markdown fences, comments, or prose). Include keys:
-id, title, oneLiner, demoUrl, screenshot, kind, categories (array), tags (array), status.
+id, title, oneLiner, demoUrl, screenshot, kind, tags (array), status.
+NOTE: tags are used for categorization/filtering (formerly split between categories and tags, now unified).
 Use best guesses from the materials; leave fields blank only if absolutely unknown.
 """
 
@@ -466,8 +467,17 @@ def ensure_list(key):
     else:
         parsed[key] = [value]
 
-ensure_list("categories")
-ensure_list("tags")
+# Merge categories and tags for backwards compatibility
+categories = parsed.get("categories", [])
+tags = parsed.get("tags", [])
+if isinstance(categories, str):
+    categories = [categories] if categories else []
+if isinstance(tags, str):
+    tags = [tags] if tags else []
+
+# Combine both and deduplicate
+merged = list(dict.fromkeys(categories + tags))
+parsed["tags"] = merged
 
 write_log(content)
 
@@ -522,7 +532,6 @@ create_catalogue_metadata() {
 
     local default_oneliner=""
     local default_kind="project"
-    local default_categories=""
     local default_tags=""
     local default_status="published"
 
@@ -549,7 +558,7 @@ def fmt(value):
     if isinstance(value, list):
         return ", ".join(str(v) for v in value)
     return value or ""
-fields = ["id","title","oneLiner","demoUrl","screenshot","kind","categories","tags","status"]
+fields = ["id","title","oneLiner","demoUrl","screenshot","kind","tags","status"]
 for key in fields:
     print(fmt(data.get(key, "")))
 PY
@@ -557,7 +566,7 @@ PY
                     if [ -z "$ai_values" ]; then
                         echo -e "${YELLOW}AI returned empty data; continuing with defaults.${NC}"
                     else
-                        IFS=$'\n' read -r ai_id ai_title ai_oneliner ai_demo ai_screenshot ai_kind ai_categories ai_tags ai_status <<EOF
+                        IFS=$'\n' read -r ai_id ai_title ai_oneliner ai_demo ai_screenshot ai_kind ai_tags ai_status <<EOF
 $ai_values
 EOF
                         [ -n "$ai_id" ] && default_id="$ai_id"
@@ -566,7 +575,6 @@ EOF
                         [ -n "$ai_demo" ] && default_demo_url="$ai_demo"
                         [ -n "$ai_screenshot" ] && default_screenshot="$ai_screenshot"
                         [ -n "$ai_kind" ] && default_kind="$ai_kind"
-                        [ -n "$ai_categories" ] && default_categories="$ai_categories"
                         [ -n "$ai_tags" ] && default_tags="$ai_tags"
                         [ -n "$ai_status" ] && default_status="$ai_status"
                     fi
@@ -600,16 +608,12 @@ EOF
     read -p "Kind (project/longform/page) [default: ${default_kind}]: " catalogue_kind
     catalogue_kind=${catalogue_kind:-$default_kind}
 
-    read -p "Categories (comma-separated, default: ${default_categories}): " categories_input
-    categories_input=${categories_input:-$default_categories}
-    read -p "Tags (comma-separated, default: ${default_tags}): " tags_input
+    read -p "Tags (comma-separated, e.g., simulation, physics, p5.js) [default: ${default_tags}]: " tags_input
     tags_input=${tags_input:-$default_tags}
 
     read -p "Status (default: ${default_status}): " catalogue_status
     catalogue_status=${catalogue_status:-$default_status}
 
-    local categories_json
-    categories_json=$(list_to_json_array "$categories_input")
     local tags_json
     tags_json=$(list_to_json_array "$tags_input")
 
@@ -636,7 +640,7 @@ EOF
   "demoUrl": "${escaped_demo}",
   "screenshot": "${escaped_screenshot}",
   "kind": "${escaped_kind}",
-  "categories": ${categories_json},
+  "categories": ${tags_json},
   "tags": ${tags_json},
   "status": "${escaped_status}"
 }
@@ -853,7 +857,7 @@ else
     repo_name=$(basename "$(pwd)")
 fi
 
-# Embed screenshot if available
+# Detect screenshot first
 detected_screenshot_path=""
 declare -a screenshot_candidates=("screenshot.png" "screenshot.jpg" "screenshot.jpeg" "Screenshot.png" "Screenshot.jpg" "Screenshot.jpeg")
 screenshot_file=""
@@ -865,46 +869,12 @@ for candidate in "${screenshot_candidates[@]}"; do
     fi
 done
 
-if [ -n "$screenshot_file" ] && [ -f "README.md" ]; then
+if [ -n "$screenshot_file" ]; then
     screenshot_relative="${screenshot_file#./}"
     detected_screenshot_path="./${screenshot_relative#./}"
-    if ! grep -q "$screenshot_relative" README.md; then
-        echo -e "${BLUE}Adding project screenshot (${screenshot_relative}) to README...${NC}"
-        cat <<EOF >> README.md
-
-## Preview
-
-<p align="center">
-  <img src="${screenshot_relative}" alt="Project screenshot" width="720" />
-</p>
-
-EOF
-        echo -e "${GREEN}Screenshot embedded in README.${NC}\n"
-    else
-        echo -e "${GREEN}Screenshot already referenced in README.${NC}\n"
-    fi
 fi
 
-create_catalogue_metadata "$repo_name" "$detected_screenshot_path"
-
-# Stage all files
-echo -e "${BLUE}Staging files...${NC}"
-git add .
-echo -e "${GREEN}Files staged.${NC}\n"
-
-# Commit (only if there are staged changes)
-if git diff --cached --quiet; then
-    echo -e "${YELLOW}No changes to commit. Skipping commit step.${NC}\n"
-else
-    echo -e "${BLUE}Creating commit...${NC}"
-    read -p "Enter commit message (default: ${default_commit_msg}): " commit_message
-    commit_message=${commit_message:-$default_commit_msg}
-    git commit -m "$commit_message"
-    echo -e "${GREEN}Commit created with message: '${commit_message}'.${NC}\n"
-    made_commit=true
-fi
-
-# GitHub setup
+# GitHub setup / Pages handling FIRST (so demo URL is available for README and catalogue)
 if [ "$is_modify" = false ]; then
     echo -e "${BLUE}=== GitHub Repository Setup ===${NC}\n"
 
@@ -976,15 +946,55 @@ else
     else
         echo -e "${YELLOW}GitHub CLI not available or not authenticated. Skipping GitHub Pages guidance.${NC}\n"
     fi
+fi
 
-    if [ "$made_commit" = true ]; then
-        read -p "Do you want to push the new commit to origin? (y/n): " push_choice
-        if [[ $push_choice =~ ^[Yy]$ ]]; then
-            git push
-            echo -e "${GREEN}Changes pushed to origin.${NC}\n"
-        else
-            echo -e "${YELLOW}Remember to push your changes later.${NC}\n"
-        fi
+# Now embed screenshot in README (after Pages setup, so demo link is already there)
+if [ -n "$screenshot_file" ] && [ -f "README.md" ]; then
+    if ! grep -q "$screenshot_relative" README.md; then
+        echo -e "${BLUE}Adding project screenshot (${screenshot_relative}) to README...${NC}"
+        cat <<EOF >> README.md
+
+## Preview
+
+<p align="center">
+  <img src="${screenshot_relative}" alt="Project screenshot" width="720" />
+</p>
+
+EOF
+        echo -e "${GREEN}Screenshot embedded in README.${NC}\n"
+    else
+        echo -e "${GREEN}Screenshot already referenced in README.${NC}\n"
+    fi
+fi
+
+# Create catalogue metadata AFTER GitHub Pages and screenshot are set up
+create_catalogue_metadata "$repo_name" "$detected_screenshot_path"
+
+# Stage all files
+echo -e "${BLUE}Staging files...${NC}"
+git add .
+echo -e "${GREEN}Files staged.${NC}\n"
+
+# Commit (only if there are staged changes)
+if git diff --cached --quiet; then
+    echo -e "${YELLOW}No changes to commit. Skipping commit step.${NC}\n"
+else
+    echo -e "${BLUE}Creating commit...${NC}"
+    read -p "Enter commit message (default: ${default_commit_msg}): " commit_message
+    commit_message=${commit_message:-$default_commit_msg}
+    git commit -m "$commit_message"
+    echo -e "${GREEN}Commit created with message: '${commit_message}'.${NC}\n"
+    made_commit=true
+fi
+
+# Push changes if in modify mode and commit was made
+if [ "$is_modify" = true ] && [ "$made_commit" = true ]; then
+    read -p "Do you want to push the new commit to origin? (y/n): " push_choice
+    if [[ $push_choice =~ ^[Yy]$ ]]; then
+        git push
+        echo -e "${GREEN}Changes pushed to origin.${NC}\n"
+    else
+        echo -e "${YELLOW}Remember to push your changes later.${NC}\n"
     fi
 fi
 

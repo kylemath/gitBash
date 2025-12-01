@@ -13,8 +13,7 @@ Generate the file at the repo root with this schema:
   "demoUrl": "https://username.github.io/collisionDetectionForcefield/",  // fallback: repo homepage or GitHub URL
   "screenshot": "./screenshot.png",              // raw URL or committed asset
   "kind": "project",                             // optional: project | longform | page | any future kind
-  "categories": ["simulation", "web"],
-  "tags": ["physics", "p5.js"],
+  "tags": ["simulation", "physics", "p5.js"],    // descriptive keywords/categories
   "status": "published"
 }
 ```
@@ -22,6 +21,8 @@ Generate the file at the repo root with this schema:
 Notes:
 - `kind` overrides topic-based detection. Use `project`, `longform`, `page`, or new kinds when needed.
 - `screenshot` can reference the auto-generated PNG that `gir` already captures; raw GitHub URLs also work.
+- `tags` are used for filtering/organizing (previously split between `categories` and `tags`, now unified)
+- Both `categories` and `tags` fields are written to the JSON for backwards compatibility, but you only need to think about "tags"
 - Fields you omit will be inferred (e.g., `id`, `title`, `demoUrl`).
 
 ## 2. Ensure a Screenshot Exists
