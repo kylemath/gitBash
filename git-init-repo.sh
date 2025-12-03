@@ -874,7 +874,64 @@ if [ -n "$screenshot_file" ]; then
     detected_screenshot_path="./${screenshot_relative#./}"
 fi
 
-# GitHub setup / Pages handling FIRST (so demo URL is available for README and catalogue)
+# For MODIFY mode: handle GitHub Pages FIRST (before README/catalogue edits)
+if [ "$is_modify" = true ]; then
+    echo -e "${BLUE}=== GitHub Enhancements (Modify Mode) ===${NC}\n"
+    if command -v gh &> /dev/null && gh auth status &> /dev/null; then
+        repo_url=$(gh repo view --json url -q .url 2>/dev/null || printf "")
+        repo_owner=$(gh repo view --json owner -q .owner.login 2>/dev/null || printf "")
+        repo_name_remote=$(gh repo view --json name -q .name 2>/dev/null || printf "")
+
+        if [ -n "$repo_url" ] && [ -n "$repo_owner" ] && [ -n "$repo_name_remote" ]; then
+            handle_github_pages "$repo_name_remote" "$repo_owner" "$repo_url"
+        else
+            echo -e "${YELLOW}Unable to determine GitHub repo information. Ensure 'origin' remote exists.${NC}\n"
+        fi
+    else
+        echo -e "${YELLOW}GitHub CLI not available or not authenticated. Skipping GitHub Pages guidance.${NC}\n"
+    fi
+fi
+
+# Embed screenshot in README (after Pages setup in modify mode, so demo link is there)
+if [ -n "$screenshot_file" ] && [ -f "README.md" ]; then
+    if ! grep -q "$screenshot_relative" README.md; then
+        echo -e "${BLUE}Adding project screenshot (${screenshot_relative}) to README...${NC}"
+        cat <<EOF >> README.md
+
+## Preview
+
+<p align="center">
+  <img src="${screenshot_relative}" alt="Project screenshot" width="720" />
+</p>
+
+EOF
+        echo -e "${GREEN}Screenshot embedded in README.${NC}\n"
+    else
+        echo -e "${GREEN}Screenshot already referenced in README.${NC}\n"
+    fi
+fi
+
+# Create catalogue metadata (after Pages and screenshot in modify mode)
+create_catalogue_metadata "$repo_name" "$detected_screenshot_path"
+
+# Stage all files
+echo -e "${BLUE}Staging files...${NC}"
+git add .
+echo -e "${GREEN}Files staged.${NC}\n"
+
+# Commit (only if there are staged changes)
+if git diff --cached --quiet; then
+    echo -e "${YELLOW}No changes to commit. Skipping commit step.${NC}\n"
+else
+    echo -e "${BLUE}Creating commit...${NC}"
+    read -p "Enter commit message (default: ${default_commit_msg}): " commit_message
+    commit_message=${commit_message:-$default_commit_msg}
+    git commit -m "$commit_message"
+    echo -e "${GREEN}Commit created with message: '${commit_message}'.${NC}\n"
+    made_commit=true
+fi
+
+# For INIT mode: handle GitHub setup AFTER commit (needs commits to push)
 if [ "$is_modify" = false ]; then
     echo -e "${BLUE}=== GitHub Repository Setup ===${NC}\n"
 
@@ -931,60 +988,6 @@ if [ "$is_modify" = false ]; then
         echo "  gh repo create $repo_name $visibility --source=. --push"
         exit 1
     fi
-else
-    echo -e "${BLUE}=== GitHub Enhancements (Modify Mode) ===${NC}\n"
-    if command -v gh &> /dev/null && gh auth status &> /dev/null; then
-        repo_url=$(gh repo view --json url -q .url 2>/dev/null || printf "")
-        repo_owner=$(gh repo view --json owner -q .owner.login 2>/dev/null || printf "")
-        repo_name_remote=$(gh repo view --json name -q .name 2>/dev/null || printf "")
-
-        if [ -n "$repo_url" ] && [ -n "$repo_owner" ] && [ -n "$repo_name_remote" ]; then
-            handle_github_pages "$repo_name_remote" "$repo_owner" "$repo_url"
-        else
-            echo -e "${YELLOW}Unable to determine GitHub repo information. Ensure 'origin' remote exists.${NC}\n"
-        fi
-    else
-        echo -e "${YELLOW}GitHub CLI not available or not authenticated. Skipping GitHub Pages guidance.${NC}\n"
-    fi
-fi
-
-# Now embed screenshot in README (after Pages setup, so demo link is already there)
-if [ -n "$screenshot_file" ] && [ -f "README.md" ]; then
-    if ! grep -q "$screenshot_relative" README.md; then
-        echo -e "${BLUE}Adding project screenshot (${screenshot_relative}) to README...${NC}"
-        cat <<EOF >> README.md
-
-## Preview
-
-<p align="center">
-  <img src="${screenshot_relative}" alt="Project screenshot" width="720" />
-</p>
-
-EOF
-        echo -e "${GREEN}Screenshot embedded in README.${NC}\n"
-    else
-        echo -e "${GREEN}Screenshot already referenced in README.${NC}\n"
-    fi
-fi
-
-# Create catalogue metadata AFTER GitHub Pages and screenshot are set up
-create_catalogue_metadata "$repo_name" "$detected_screenshot_path"
-
-# Stage all files
-echo -e "${BLUE}Staging files...${NC}"
-git add .
-echo -e "${GREEN}Files staged.${NC}\n"
-
-# Commit (only if there are staged changes)
-if git diff --cached --quiet; then
-    echo -e "${YELLOW}No changes to commit. Skipping commit step.${NC}\n"
-else
-    echo -e "${BLUE}Creating commit...${NC}"
-    read -p "Enter commit message (default: ${default_commit_msg}): " commit_message
-    commit_message=${commit_message:-$default_commit_msg}
-    git commit -m "$commit_message"
-    echo -e "${GREEN}Commit created with message: '${commit_message}'.${NC}\n"
-    made_commit=true
 fi
 
 # Push changes if in modify mode and commit was made
