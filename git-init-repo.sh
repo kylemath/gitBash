@@ -732,6 +732,28 @@ else
     echo -e "${GREEN}.gitignore already exists.${NC}\n"
 fi
 
+# Ensure .cursor directory exists for Cursor chat history tracking
+if [ ! -d ".cursor" ]; then
+    echo -e "${BLUE}Creating .cursor directory for Cursor chat history tracking...${NC}"
+    mkdir -p .cursor
+    touch .cursor/.gitkeep
+    echo -e "${GREEN}Created .cursor directory${NC}\n"
+else
+    # Ensure .gitkeep exists even if directory already exists
+    if [ ! -f ".cursor/.gitkeep" ]; then
+        touch .cursor/.gitkeep
+        echo -e "${BLUE}Added .gitkeep to existing .cursor directory${NC}\n"
+    else
+        echo -e "${GREEN}.cursor directory already set up for tracking${NC}\n"
+    fi
+fi
+
+# Verify .cursor is not ignored
+if git check-ignore .cursor &>/dev/null; then
+    echo -e "${YELLOW}Warning: .cursor directory is ignored by .gitignore${NC}"
+    echo -e "${YELLOW}To track Cursor chat history, remove .cursor from .gitignore${NC}\n"
+fi
+
 # Scan for potential files that should be ignored
 echo -e "${BLUE}Scanning for files that might need to be ignored...${NC}\n"
 
